@@ -1,108 +1,105 @@
 import numpy as np
+import copy
+from abc import ABC, abstractmethod 
 
-class  Function():
-    def forward(self): 
-        pass
+class Tensor():
+    def __init__(self,shape):
+        self.data = np.ndarray(shape,np.float32)
+        self.grad = np.ndarray(shape,np.float32)
+
+class  Function(ABC):
+    @abstractmethod
+    def forward(self): pass
     
-    def backward(self): 
-        pass
+    @abstractmethod
+    def backward(self): pass
     
-    def getParams(self):
-        return []
+    def getParams(self): return []
+
 
 class Linear(Function):
-    def __init__(self,input,output):
-        self.weights = {'data':np.ndarray((input,output),np.float32),\
-                        'grad':np.ndarray((input,output),np.float32)}
-
-        self.bias    = {'data':np.ndarray((output,),np.float32),\
-                        'grad':np.ndarray((output,),np.float32)}
-
+    def __init__(self,in_nodes,out_nodes):
+        self.weights = Tensor((in_nodes,out_nodes))
+        self.bias    = Tensor((1,out_nodes))
         self.type = 'linear'
 
     def forward(self,x):
-        output = np.dot(x,self.weights['data'])+self.bias['data']
+        output = np.dot(x,self.weights.data)+self.bias.data
         self.input = x 
         return output
 
-    def backward(self,d_x):
-        self.weights['grad'] += np.dot(self.input.T,d_x)
-        self.bias['grad']    += d_x
-        grad_input            = np.dot(d_x,self.weights['data'].T)
+    def backward(self,d_y):
+        self.weights.grad += np.dot(self.input.T,d_y)
+        self.bias.grad    += np.sum(d_y,axis=0,keepdims=True)
+        grad_input         = np.dot(d_y,self.weights.data.T)
         return grad_input
 
     def getParams(self):
         return [self.weights,self.bias]
 
-class Softmax(Function):
+class SoftmaxWithLoss(Function):
     def __init__(self):
         self.type = 'normalization'
 
-    def forward(self,x):
-        unnormalized_proba      = np.exp(x-np.max(x))
-        self.normalized_proba   = unnormalized_proba/np.sum(unnormalized_proba)
-    
-        return self.normalized_proba
+    def forward(self,x,target):
+        unnormalized_proba = np.exp(x-np.max(x,axis=1,keepdims=True))
+        self.proba         = unnormalized_proba/np.sum(unnormalized_proba,axis=1,keepdims=True)
+        self.target        = target
+        loss               = -np.log(self.proba[range(len(target)),target]) 
+        return loss.mean()
 
-    def backward(self,d_x):
-        return d_x*self.normalized_proba*(1-self.normalized_proba) 
+    def backward(self):
+        gradient = self.proba
+        gradient[range(len(self.target)),self.target]-=1.0
+        gradient/=len(self.target)
+        return gradient
 
 class  ReLU(Function):
-    def __init__(self):
-        self.type = 'activation'
+    def __init__(self,inplace=True):
+        self.type    = 'activation'
+        self.inplace = inplace
     
     def forward(self,x):
-        self.activated = x>0
-        return x*self.activated
+        if self.inplace:
+            x[x<0] = 0.
+            self.activated = x
+        else:
+            self.activated = x*(x>0)
+        
+        return self.activated
 
-    def backward(self,d_x):
-        return d_x*self.activated
+    def backward(self,d_y):
+        return d_y*(self.activated>0)
 
 class Tanh(Function):
     def __init__(self):
         self.type = 'activation'
     
     def forward(self,x):
-        self.activation = np.tanh(x)
-        return self.activation
+        self.activated = np.tanh(x)
+        return self.activated
 
     def backward(self,d_x):
-        return d_x*(1.-self.activation**2)
+        return d_x*(1.-self.activated**2)
 
-class NLLLoss(Function):
-    def __init__(self):
-        self.type = 'loss'
-
-    def forward(self,prediction,target):
-        self.prediction  = prediction.flatten()
-        self.target      = target
-        loss             = -np.log(self.prediction[self.target])
-
-        return loss
-
-    def backward(self,scale = 1.0):
-        d_x = np.zeros_like(self.prediction)
-        d_x[self.target] = -scale*1.0/(self.prediction[self.target]+1.e-10)
-        return d_x
-
-class Optimier():
-    def step(self):
-        pass
+class Optimizer(ABC):
+    def __init__(self,parameters):
+        self.parameters = parameters
+    
+    @abstractmethod
+    def step(self): pass
 
     def zeroGrad(self):
-        pass
+        for p in self.parameters:
+            p.grad = 0.
 
-class SGD(Optimier):
+class SGD(Optimizer):
     def __init__(self,parameters,lr=.001):
-        self.parameters = parameters
+        super().__init__(parameters)
         self.lr         = lr
 
     def step(self):
         for p in self.parameters:
-            p['data']+=-self.lr*p['grad']
-
-    def zeroGrad(self):
-        for p in self.parameters:
-            p['grad'] = 0.0
+            p.data+=-self.lr*p.grad
 
 ##############################Library Implementation **END##############################
