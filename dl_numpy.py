@@ -1,21 +1,30 @@
 import numpy as np
-import copy
-from abc import ABC, abstractmethod 
 
 class Tensor():
     def __init__(self,shape):
         self.data = np.ndarray(shape,np.float32)
         self.grad = np.ndarray(shape,np.float32)
 
-class  Function(ABC):
-    @abstractmethod
-    def forward(self): pass
+class  Function(object):
+    def forward(self): 
+        raise NotImplementedError
     
-    @abstractmethod
-    def backward(self): pass
+    def backward(self): 
+        raise NotImplementedError
     
-    def getParams(self): return []
+    def getParams(self): 
+        return []
 
+class Optimizer(object):
+    def __init__(self,parameters):
+        self.parameters = parameters
+    
+    def step(self): 
+        raise NotImplementedError
+
+    def zeroGrad(self):
+        for p in self.parameters:
+            p.grad = 0.
 
 class Linear(Function):
     def __init__(self,in_nodes,out_nodes):
@@ -71,28 +80,6 @@ class  ReLU(Function):
     def backward(self,d_y):
         return d_y*(self.activated>0)
 
-class Tanh(Function):
-    def __init__(self):
-        self.type = 'activation'
-    
-    def forward(self,x):
-        self.activated = np.tanh(x)
-        return self.activated
-
-    def backward(self,d_x):
-        return d_x*(1.-self.activated**2)
-
-class Optimizer(ABC):
-    def __init__(self,parameters):
-        self.parameters = parameters
-    
-    @abstractmethod
-    def step(self): pass
-
-    def zeroGrad(self):
-        for p in self.parameters:
-            p.grad = 0.
-
 class SGD(Optimizer):
     def __init__(self,parameters,lr=.001,weight_decay=0.0,momentum = .9):
         super().__init__(parameters)
@@ -107,6 +94,5 @@ class SGD(Optimizer):
         for p,v in zip(self.parameters,self.velocity):
             v = self.momentum*v+p.grad+self.weight_decay*p.data
             p.data=p.data-self.lr*v
-
 
 ##############################Library Implementation **END##############################
